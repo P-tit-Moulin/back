@@ -1,20 +1,15 @@
 {
   "name": "back",
   "version": "1.0.0",
-  "main": "main.js",
+  "description": "",
+  "main": "src/server.js",
   "scripts": {
-    "start": "node main.js",
-    "dev": "nodemon main.js",
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
     "lint": "eslint .",
-    "format": "prettier --write .",
-    "prepare": "husky"
+    "format": "prettier --write ."
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/P-tit-Moulin/back.git"
-  },
-  "keywords": [],
-  "author": "",
+  "author": "Claire Fernandes",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
@@ -23,28 +18,18 @@
   "homepage": "https://github.com/P-tit-Moulin/back#readme",
   "description": "",
   "dependencies": {
-    "axios": "^1.10.0",
-    "csv-parser": "^3.2.0",
-    "dotenv": "^16.5.0",
-    "express": "^5.1.0",
-    "mongodb": "^6.17.0",
-    "mongoose": "^8.13.2",
-    "uuid": "^11.1.0"
+    "body-parser": "^1.20.3",
+    "express": "^4.21.2",
+    "mongoose": "^8.9.6",
+    "dotenv": "^16.0.3"
   },
   "devDependencies": {
-    "@eslint/js": "^9.24.0",
-    "eslint": "^9.24.0",
-    "eslint-config-prettier": "^10.1.8",
-    "globals": "^16.3.0",
-    "husky": "^8.0.0",
-    "lint-staged": "^15.5.1",
-    "nodemon": "^3.1.9",
-    "prettier": "^3.5.3"
+    "nodemon": "^3.0.1",
+    "eslint": "^8.53.0",
+    "prettier": "^3.1.0"
   },
-  "lint-staged": {
-    "*.js": [
-      "eslint --fix",
-      "prettier --write"
-    ]
-  }
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "keywords": ["express", "mongodb", "mongoose", "nosql"]
 }
