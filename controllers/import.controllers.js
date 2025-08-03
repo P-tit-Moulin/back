@@ -23,7 +23,6 @@ async function importCSV() {
                 type: 'Point',
                 coordinates: [longitude, latitude],
               },
-              categorie: item['Catégorie'],
               nom: item.Nom,
               adresse: item.Adresse,
               com_name: item['Nom Officiel Commune'],
