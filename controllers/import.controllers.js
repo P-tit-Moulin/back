@@ -26,20 +26,27 @@ async function importCSV() {
               nom: item.Nom,
               adresse: item.Adresse,
               com_name: item['Nom Officiel Commune'],
-              code_postal: item['Code Postal'] ? Number(item['Code Postal']) : null,
+              code_postal: item['Code Postal']
+                ? Number(item['Code Postal'])
+                : null,
               description: item.Description,
               familles_des_produits: item['Familles des produits']
                 ? item['Familles des produits'].split('&').map((s) => s.trim())
                 : [],
-              familles_des_produits_restreintes: item.familles_des_produits_restreintes
-                ? item.familles_des_produits_restreintes.split(';').map((s) => s.trim())
-                : [],
+              familles_des_produits_restreintes:
+                item.familles_des_produits_restreintes
+                  ? item.familles_des_produits_restreintes
+                      .split(';')
+                      .map((s) => s.trim())
+                  : [],
             };
           });
 
           await Producer.insertMany(docs);
 
-          console.log(`✅ ${results.length} producteurs importés/mis à jour depuis CSV.`);
+          console.log(
+            `✅ ${results.length} producteurs importés/mis à jour depuis CSV.`,
+          );
           resolve({ success: true, count: results.length });
         } catch (err) {
           reject(err);
