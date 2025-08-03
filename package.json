@@ -7,7 +7,8 @@
     "dev": "nodemon main.js",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test": "jest"
   },
   "repository": {
     "type": "git",
@@ -33,13 +34,17 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.24.0",
-    "eslint": "^9.24.0",
+    "eslint": "^9.32.0",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jest": "^29.0.1",
+    "eslint-plugin-prettier": "^5.5.3",
     "globals": "^16.3.0",
     "husky": "^8.0.0",
+    "jest": "^30.0.5",
     "lint-staged": "^15.5.1",
     "nodemon": "^3.1.9",
-    "prettier": "^3.5.3"
+    "prettier": "^3.6.2",
+    "supertest": "^7.1.4"
   },
   "lint-staged": {
     "*.js": [

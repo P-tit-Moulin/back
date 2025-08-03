@@ -147,7 +147,9 @@ class ProducerController {
     try {
       // On récupère les valeurs brutes
       const rawFamilies = await Producer.distinct('familles_des_produits');
-      const rawRestricted = await Producer.distinct('familles_des_produits_restreintes');
+      const rawRestricted = await Producer.distinct(
+        'familles_des_produits_restreintes',
+      );
 
       // Helper pour séparer, nettoyer et dédupliquer
       const splitAndUnique = (arr) => {
@@ -156,8 +158,8 @@ class ProducerController {
             arr
               .flatMap((item) => item.split(','))
               .map((s) => s.trim())
-              .filter(Boolean)
-          )
+              .filter(Boolean),
+          ),
         );
       };
 
