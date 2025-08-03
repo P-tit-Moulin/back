@@ -34,8 +34,8 @@ class ProducerController {
       if (geometry) {
         const [lon, lat] = geometry.split(',').map(parseFloat);
         if (!isNaN(lon) && !isNaN(lat)) {
-          // rayon en radians = km / rayon de la Terre (~6378.1 km)
-          const radiusInRadians = parseFloat(radius) / 6378.1;
+          // rayon en radians = km / rayon de la Terre
+          const radiusInRadians = parseFloat(radius) / EARTH_RADIUS_KM;
           filters.geometry = {
             $geoWithin: {
               $centerSphere: [[lon, lat], radiusInRadians],
