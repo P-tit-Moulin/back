@@ -15,6 +15,7 @@ class ProducerController {
       } = req.query;
 
       const filters = {};
+      const EARTH_RADIUS_KM = 6378.1;
 
       if (com_name) {
         filters.com_name = { $regex: com_name, $options: 'i' };
@@ -30,11 +31,9 @@ class ProducerController {
         };
       }
 
-      // Remplacement de $near par $geoWithin/$centerSphere
       if (geometry) {
         const [lon, lat] = geometry.split(',').map(parseFloat);
         if (!isNaN(lon) && !isNaN(lat)) {
-          // rayon en radians = km / rayon de la Terre
           const radiusInRadians = parseFloat(radius) / EARTH_RADIUS_KM;
           filters.geometry = {
             $geoWithin: {
@@ -119,7 +118,7 @@ class ProducerController {
               type: 'Point',
               coordinates: [parseFloat(longitude), parseFloat(latitude)],
             },
-            $maxDistance: parseFloat(radius) * 1000, // Convertir km en mètres
+            $maxDistance: parseFloat(radius) * 1000,
           },
         },
       }).limit(50);
