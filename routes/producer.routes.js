@@ -1,14 +1,13 @@
 const express = require('express');
-const router = express.Router();
-const { importCSV } = require('../controllers/import.controllers.js');
+const ProducerController = require('../controllers/producer.controller');
 
-router.post('/', async (req, res) => {
-  try {
-    const result = await importCSV();
-    res.json({ message: 'Import CSV terminé', ...result });
-  } catch (error) {
-    res.status(500).json({ message: "Erreur lors de l'import CSV", error: error.message });
-  }
-});
+const router = express.Router();
+
+router.get('/', ProducerController.getProducers);
+
+router.get('/nearby/search', ProducerController.getProducersNearby);
+
+router.get('/:id', ProducerController.getProducerById);
+router.get('/families/all', ProducerController.getProductFamilies);
 
 module.exports = router;

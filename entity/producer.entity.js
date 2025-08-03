@@ -6,7 +6,6 @@ const producerSchema = new mongoose.Schema({
     type: { type: String, enum: ['Point'], required: true, default: 'Point' },
     coordinates: { type: [Number], required: true },
   },
-  categorie: String,
   nom: String,
   adresse: String,
   com_name: String,
@@ -15,6 +14,8 @@ const producerSchema = new mongoose.Schema({
   familles_des_produits: [String],
   familles_des_produits_restreintes: [String],
 });
+
+producerSchema.index({ geometry: '2dsphere' });
 
 const Producer = mongoose.model('Producer', producerSchema);
 
