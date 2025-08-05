@@ -1,11 +1,10 @@
 name: Run Tests
 
 on:
-  # pull_request:
-  #   types: [opened, synchronize, reopened]
-  #   branches: [pre-prod, develop]
-  push: 
-    branches: [feat/automatization-test]
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [pre-prod, develop]
+    
 jobs:
   test:
     runs-on: ubuntu-latest
