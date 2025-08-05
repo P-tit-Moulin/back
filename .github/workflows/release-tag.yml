@@ -40,10 +40,24 @@ jobs:
         run: |
           git tag ${{ env.VERSION }}
           git push origin ${{ env.VERSION }}
+      
+      - name: Extract changelog entry for version
+        id: extract_changelog
+        run: |
+          VERSION_ESCAPED=$(echo "${{ env.VERSION }}" | sed 's/\./\\./g')
+          CHANGELOG=$(awk "/^## \[${VERSION_ESCAPED//\//\\/}\]/ {flag=1; next} /^## \[/ {flag=0} flag" CHANGELOG.md)
+          if [ -z "$CHANGELOG" ]; then
+            echo "::error::No changelog entry found for version ${{ env.VERSION }}"
+            exit 1
+          fi
+          echo "RELEASE_BODY<<EOF" >> $GITHUB_ENV
+          echo "$CHANGELOG" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION }}
+          body: ${{ env.RELEASE_BODY }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
