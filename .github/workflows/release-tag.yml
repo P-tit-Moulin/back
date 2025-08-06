@@ -1,76 +1,176 @@
-name: Auto Tag & Release from Merge Title
+name: Version, Tag, Release
 
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches:
+      - main
       - pre-prod
 
 jobs:
-  tag_and_release:
+  versioning-and-release:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      full_tag: ${{ steps.version.outputs.full_tag }}
+      is_latest: ${{ steps.version.outputs.is_latest }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get latest commit message
-        id: get_commit
+      - name: Get current version from package.json
+        id: get_version
         run: |
-          {
-            echo 'COMMIT_MSG<<EOF'
-            git log -1 --pretty=%B
-            echo 'EOF'
-          } >> $GITHUB_ENV
+          VERSION=$(jq -r '.version' package.json)
+          echo "CURRENT_VERSION=${VERSION}" >> $GITHUB_ENV
 
-      - name: Extract version from commit message
-        id: extract_version
+      - name: Increment version based on source branch
+        id: increment_version
         run: |
-          VERSION=$(echo "$COMMIT_MSG" | grep -oE '#[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?' | head -n 1 | tr -d '#')
-          if [ -z "$VERSION" ]; then
-            echo "::error::No version tag found in commit message."
-            exit 1
+          CURRENT_VERSION=${{ env.CURRENT_VERSION }}
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          TARGET_BRANCH="${{ github.base_ref }}"
+          
+          CLEAN_VERSION=$(echo $CURRENT_VERSION | sed 's/-pre-prod//')
+          
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CLEAN_VERSION"
+          
+          case $BRANCH_NAME in
+            feat/*|feature/*)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            fix/*|hotfix/*)
+              PATCH=$((PATCH + 1))
+              ;;
+            *breaking*|*major*)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+          esac
+          
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          
+          if [[ "$TARGET_BRANCH" == "pre-prod" ]]; then
+            FULL_VERSION="${NEW_VERSION}-pre-prod"
+            IS_LATEST="false"
+          elif [[ "$TARGET_BRANCH" == "main" ]]; then
+            FULL_VERSION="${NEW_VERSION}"
+            IS_LATEST="true"
           fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          echo "FULL_VERSION=$FULL_VERSION" >> $GITHUB_ENV
+          echo "IS_LATEST=$IS_LATEST" >> $GITHUB_ENV
 
-      - name: Set up Git credentials for GitHub Actions
+      - name: Get PR details and extract changelog
         run: |
-          git config --global user.name "${{ github.actor }}"
-          git config --global user.email "${{ github.actor }}@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-
-      - name: Create git tag
-        run: |
-          git tag ${{ env.VERSION }}
-          git push origin ${{ env.VERSION }}
-      
-      - name: Extract changelog entry for version
-        id: extract_changelog
-        run: |
-          VERSION=${{ env.VERSION }}
-          CHANGELOG=$(awk -v version="$VERSION" '
-            BEGIN { in_section=0 }
-            $0 ~ "^## \\[" version "\\]" { in_section=1; next }
-            in_section && $0 ~ "^## \\[" { in_section=0 }
-            in_section { print }
-          ' CHANGELOG.md)
-
-          echo "==== EXTRACTED CHANGELOG ===="
-          echo "$CHANGELOG"
-          echo "============================="
-
+          PR_DATA=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.number }}")
+          
+          PR_BODY=$(echo "$PR_DATA" | jq -r '.body // ""')
+          
+          if echo "$PR_BODY" | grep -q "#changelog"; then
+            CHANGELOG=$(echo "$PR_BODY" | sed -n '/#changelog/,$p' | sed '1d' | sed '/^[[:space:]]*$/d')
+          else
+            CHANGELOG="- Update to version ${{ env.FULL_VERSION }}"
+          fi
+          
           if [ -z "$CHANGELOG" ]; then
-            echo "::error::No changelog entry found for version $VERSION"
-            exit 1
+            CHANGELOG="- Update to version ${{ env.FULL_VERSION }}"
+          fi
+          
+          CHANGELOG_B64=$(echo "$CHANGELOG" | base64 -w 0)
+          echo "CHANGELOG_B64=${CHANGELOG_B64}" >> $GITHUB_ENV
+
+      - name: Update version in package.json
+        id: version
+        run: |
+          jq --arg version "${{ env.FULL_VERSION }}" '.version = $version' package.json > tmp.json && mv tmp.json package.json
+          
+          echo "version=${{ env.NEW_VERSION }}" >> $GITHUB_OUTPUT
+          echo "full_tag=${{ env.FULL_VERSION }}" >> $GITHUB_OUTPUT
+          echo "is_latest=${{ env.IS_LATEST }}" >> $GITHUB_OUTPUT
+
+      - name: Commit and push updated package.json
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          
+          git add package.json
+          git commit -m "Update version to ${{ env.FULL_VERSION }}"
+          git push origin ${{ github.ref_name }}
+
+      - name: Remove old latest tag
+        if: env.IS_LATEST == 'true'
+        run: |
+          if git tag -l | grep -q "^latest$"; then
+            git tag -d latest || true
+            git push origin :refs/tags/latest || true
           fi
 
-          {
-            echo "RELEASE_BODY<<EOF"
-            echo "$CHANGELOG"
-            echo "EOF"
-          } >> $GITHUB_ENV
+      - name: Create Git tags
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          
+          git tag ${{ env.FULL_VERSION }}
+          git push origin ${{ env.FULL_VERSION }}
+          
+          if [[ "${{ env.IS_LATEST }}" == "true" ]]; then
+            git tag latest
+            git push origin latest
+          fi
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.VERSION }}
-          body: ${{ env.RELEASE_BODY }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CHANGELOG_DECODED=$(echo "$CHANGELOG_B64" | base64 -d)
+          
+          RELEASE_PAYLOAD=$(jq -n \
+            --arg tag_name "${{ env.FULL_VERSION }}" \
+            --arg name "Release ${{ env.FULL_VERSION }}" \
+            --arg changelog "$CHANGELOG_DECODED" \
+            --arg full_version "${{ env.FULL_VERSION }}" \
+            --arg source_branch "${{ github.event.pull_request.head.ref }}" \
+            --arg target_branch "${{ github.base_ref }}" \
+            --arg pr_author "${{ github.event.pull_request.user.login }}" \
+            --arg is_latest_str "$([[ "${{ env.IS_LATEST }}" == "true" ]] && echo "true" || echo "false")" \
+            --argjson prerelease "$([[ "${{ env.IS_LATEST }}" != "true" ]] && echo true || echo false)" \
+            '{
+              tag_name: $tag_name,
+              name: $name,
+              body: ("## 📋 Changelog\n\n" + $changelog + "\n\n## 🏷️ Tags\n- **Version**: `" + $full_version + "`" + (if ($is_latest_str == "true") then "\n- **Latest**: `latest`" else "" end) + "\n\n## 📦 Docker Package\n\n```bash\n# Pull specific version\ndocker pull ghcr.io/baptiste-ferrand/template-release:" + $full_version + (if ($is_latest_str == "true") then "\n# Pull latest stable\ndocker pull ghcr.io/baptiste-ferrand/template-release:latest" else "" end) + "\n```\n\n## ℹ️ Information\n\n- **Source branch**: `" + $source_branch + "`\n- **Target branch**: `" + $target_branch + "`\n- **Release type**: " + (if ($is_latest_str == "true") then "**Stable** 🎯" else "**Pre-production** 🧪" end) + "\n- **PR author**: @" + $pr_author),
+              prerelease: $prerelease,
+              make_latest: $is_latest_str
+            }')
+          
+          echo "🚀 Creating release with payload:"
+          echo "$RELEASE_PAYLOAD" | jq '.'
+          
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/${{ github.repository }}/releases" \
+            -d "$RELEASE_PAYLOAD")
+          
+          echo "🎯 GitHub API Response:"
+          echo "$RESPONSE" | jq '.'
+          
+          if echo "$RESPONSE" | jq -e '.html_url' > /dev/null; then
+            RELEASE_URL=$(echo "$RESPONSE" | jq -r '.html_url')
+            echo "✅ Release created successfully: $RELEASE_URL"
+          else
+            echo "❌ Failed to create release"
+            echo "$RESPONSE"
+            exit 1
+          fi
