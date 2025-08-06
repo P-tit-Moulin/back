@@ -37,11 +37,18 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.number }}")
           
-          PR_TITLE=$(echo "$PR_DATA" | jq -r '.title // ""')
+          # Extraire le titre et le corps de la PR en gérant les caractères spéciaux
+          PR_TITLE=$(echo "$PR_DATA" | jq -r '.title // ""' | tr -d '\n\r')
           PR_BODY=$(echo "$PR_DATA" | jq -r '.body // ""')
           
-          echo "PR_TITLE=${PR_TITLE}" >> $GITHUB_ENV
-          echo "PR_BODY=${PR_BODY}" >> $GITHUB_ENV
+          # Sauvegarder le titre (sans caractères de fin de ligne)
+          echo "PR_TITLE<<EOF" >> $GITHUB_ENV
+          echo "$PR_TITLE" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          
+          # Sauvegarder le corps en base64 pour éviter les problèmes de caractères spéciaux
+          PR_BODY_B64=$(echo "$PR_BODY" | base64 -w 0)
+          echo "PR_BODY_B64=${PR_BODY_B64}" >> $GITHUB_ENV
           
           # Déterminer le type de version basé sur les tags dans le titre
           VERSION_TYPE=""
@@ -59,6 +66,7 @@ jobs:
           
           echo "VERSION_TYPE=${VERSION_TYPE}" >> $GITHUB_ENV
           echo "🏷️ Detected version type: ${VERSION_TYPE}"
+          echo "📝 PR Title: ${PR_TITLE}"
 
       - name: Increment version based on PR title tags
         id: increment_version
@@ -110,7 +118,8 @@ jobs:
 
       - name: Extract changelog from PR body
         run: |
-          PR_BODY="${{ env.PR_BODY }}"
+          # Décoder le corps de la PR depuis base64
+          PR_BODY=$(echo "${{ env.PR_BODY_B64 }}" | base64 -d)
           
           if echo "$PR_BODY" | grep -q "#changelog"; then
             CHANGELOG=$(echo "$PR_BODY" | sed -n '/#changelog/,$p' | sed '1d' | sed '/^[[:space:]]*$/d')
@@ -186,6 +195,9 @@ jobs:
             patch) VERSION_ICON="🔧" ;;
           esac
           
+          # Récupérer le titre de la PR proprement
+          PR_TITLE="${{ env.PR_TITLE }}"
+          
           RELEASE_PAYLOAD=$(jq -n \
             --arg tag_name "${{ env.FULL_VERSION }}" \
             --arg name "${VERSION_ICON} Release ${{ env.FULL_VERSION }}" \
@@ -195,7 +207,7 @@ jobs:
             --arg target_branch "${{ github.base_ref }}" \
             --arg pr_author "${{ github.event.pull_request.user.login }}" \
             --arg version_type "${{ env.VERSION_TYPE }}" \
-            --arg pr_title "${{ env.PR_TITLE }}" \
+            --arg pr_title "$PR_TITLE" \
             --arg is_latest_str "$([[ "${{ env.IS_LATEST }}" == "true" ]] && echo "true" || echo "false")" \
             --argjson prerelease "$([[ "${{ env.IS_LATEST }}" != "true" ]] && echo true || echo false)" \
             '{
