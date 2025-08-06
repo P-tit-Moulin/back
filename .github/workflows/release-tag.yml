@@ -31,34 +31,69 @@ jobs:
           VERSION=$(jq -r '.version' package.json)
           echo "CURRENT_VERSION=${VERSION}" >> $GITHUB_ENV
 
-      - name: Increment version based on source branch
+      - name: Get PR details and determine version type
+        run: |
+          PR_DATA=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.number }}")
+          
+          PR_TITLE=$(echo "$PR_DATA" | jq -r '.title // ""')
+          PR_BODY=$(echo "$PR_DATA" | jq -r '.body // ""')
+          
+          echo "PR_TITLE=${PR_TITLE}" >> $GITHUB_ENV
+          echo "PR_BODY=${PR_BODY}" >> $GITHUB_ENV
+          
+          # Déterminer le type de version basé sur les tags dans le titre
+          VERSION_TYPE=""
+          if echo "$PR_TITLE" | grep -qi "#breakingchange\|#breaking\|#major"; then
+            VERSION_TYPE="major"
+          elif echo "$PR_TITLE" | grep -qi "#feat\|#feature\|#minor"; then
+            VERSION_TYPE="minor"
+          elif echo "$PR_TITLE" | grep -qi "#fix\|#hotfix\|#patch"; then
+            VERSION_TYPE="patch"
+          else
+            # Par défaut, si aucun tag n'est trouvé, on fait un patch
+            VERSION_TYPE="patch"
+            echo "⚠️ Warning: No version tag found in PR title. Defaulting to patch version."
+          fi
+          
+          echo "VERSION_TYPE=${VERSION_TYPE}" >> $GITHUB_ENV
+          echo "🏷️ Detected version type: ${VERSION_TYPE}"
+
+      - name: Increment version based on PR title tags
         id: increment_version
         run: |
           CURRENT_VERSION=${{ env.CURRENT_VERSION }}
-          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          VERSION_TYPE=${{ env.VERSION_TYPE }}
           TARGET_BRANCH="${{ github.base_ref }}"
           
+          # Nettoyer la version actuelle (retirer -pre-prod si présent)
           CLEAN_VERSION=$(echo $CURRENT_VERSION | sed 's/-pre-prod//')
           
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CLEAN_VERSION"
           
-          case $BRANCH_NAME in
-            feat/*|feature/*)
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              ;;
-            fix/*|hotfix/*)
-              PATCH=$((PATCH + 1))
-              ;;
-            *breaking*|*major*)
+          # Incrémenter selon le type détecté
+          case $VERSION_TYPE in
+            major)
               MAJOR=$((MAJOR + 1))
               MINOR=0
               PATCH=0
+              echo "🔥 Major version increment: ${MAJOR}.${MINOR}.${PATCH}"
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              echo "✨ Minor version increment: ${MAJOR}.${MINOR}.${PATCH}"
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              echo "🔧 Patch version increment: ${MAJOR}.${MINOR}.${PATCH}"
               ;;
           esac
           
           NEW_VERSION="$MAJOR.$MINOR.$PATCH"
           
+          # Déterminer la version complète selon la branche cible
           if [[ "$TARGET_BRANCH" == "pre-prod" ]]; then
             FULL_VERSION="${NEW_VERSION}-pre-prod"
             IS_LATEST="false"
@@ -70,19 +105,28 @@ jobs:
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
           echo "FULL_VERSION=$FULL_VERSION" >> $GITHUB_ENV
           echo "IS_LATEST=$IS_LATEST" >> $GITHUB_ENV
-
-      - name: Get PR details and extract changelog
-        run: |
-          PR_DATA=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.number }}")
           
-          PR_BODY=$(echo "$PR_DATA" | jq -r '.body // ""')
+          echo "📦 Final version: ${FULL_VERSION}"
+
+      - name: Extract changelog from PR body
+        run: |
+          PR_BODY="${{ env.PR_BODY }}"
           
           if echo "$PR_BODY" | grep -q "#changelog"; then
             CHANGELOG=$(echo "$PR_BODY" | sed -n '/#changelog/,$p' | sed '1d' | sed '/^[[:space:]]*$/d')
           else
-            CHANGELOG="- Update to version ${{ env.FULL_VERSION }}"
+            # Générer un changelog basé sur le type de version
+            case ${{ env.VERSION_TYPE }} in
+              major)
+                CHANGELOG="- 🔥 Breaking changes in version ${{ env.FULL_VERSION }}"
+                ;;
+              minor)
+                CHANGELOG="- ✨ New features in version ${{ env.FULL_VERSION }}"
+                ;;
+              patch)
+                CHANGELOG="- 🔧 Bug fixes in version ${{ env.FULL_VERSION }}"
+                ;;
+            esac
           fi
           
           if [ -z "$CHANGELOG" ]; then
@@ -107,7 +151,7 @@ jobs:
           git config --global user.email "actions@github.com"
           
           git add package.json
-          git commit -m "Update version to ${{ env.FULL_VERSION }}"
+          git commit -m "Update version to ${{ env.FULL_VERSION }} [skip ci]"
           git push origin ${{ github.ref_name }}
 
       - name: Remove old latest tag
@@ -135,20 +179,29 @@ jobs:
         run: |
           CHANGELOG_DECODED=$(echo "$CHANGELOG_B64" | base64 -d)
           
+          # Déterminer l'icône selon le type de version
+          case ${{ env.VERSION_TYPE }} in
+            major) VERSION_ICON="🔥" ;;
+            minor) VERSION_ICON="✨" ;;
+            patch) VERSION_ICON="🔧" ;;
+          esac
+          
           RELEASE_PAYLOAD=$(jq -n \
             --arg tag_name "${{ env.FULL_VERSION }}" \
-            --arg name "Release ${{ env.FULL_VERSION }}" \
+            --arg name "${VERSION_ICON} Release ${{ env.FULL_VERSION }}" \
             --arg changelog "$CHANGELOG_DECODED" \
             --arg full_version "${{ env.FULL_VERSION }}" \
             --arg source_branch "${{ github.event.pull_request.head.ref }}" \
             --arg target_branch "${{ github.base_ref }}" \
             --arg pr_author "${{ github.event.pull_request.user.login }}" \
+            --arg version_type "${{ env.VERSION_TYPE }}" \
+            --arg pr_title "${{ env.PR_TITLE }}" \
             --arg is_latest_str "$([[ "${{ env.IS_LATEST }}" == "true" ]] && echo "true" || echo "false")" \
             --argjson prerelease "$([[ "${{ env.IS_LATEST }}" != "true" ]] && echo true || echo false)" \
             '{
               tag_name: $tag_name,
               name: $name,
-              body: ("## 📋 Changelog\n\n" + $changelog + "\n\n## 🏷️ Tags\n- **Version**: `" + $full_version + "`" + (if ($is_latest_str == "true") then "\n- **Latest**: `latest`" else "" end) + "\n\n## 📦 Docker Package\n\n```bash\n# Pull specific version\ndocker pull ghcr.io/baptiste-ferrand/template-release:" + $full_version + (if ($is_latest_str == "true") then "\n# Pull latest stable\ndocker pull ghcr.io/baptiste-ferrand/template-release:latest" else "" end) + "\n```\n\n## ℹ️ Information\n\n- **Source branch**: `" + $source_branch + "`\n- **Target branch**: `" + $target_branch + "`\n- **Release type**: " + (if ($is_latest_str == "true") then "**Stable** 🎯" else "**Pre-production** 🧪" end) + "\n- **PR author**: @" + $pr_author),
+              body: ("## 📋 Changelog\n\n" + $changelog + "\n\n## 🏷️ Tags\n- **Version**: `" + $full_version + "`" + (if ($is_latest_str == "true") then "\n- **Latest**: `latest`" else "" end) + "\n\n## 📦 Docker Package\n\n```bash\n# Pull specific version\ndocker pull ghcr.io/baptiste-ferrand/template-release:" + $full_version + (if ($is_latest_str == "true") then "\n# Pull latest stable\ndocker pull ghcr.io/baptiste-ferrand/template-release:latest" else "" end) + "\n```\n\n## ℹ️ Information\n\n- **PR Title**: `" + $pr_title + "`\n- **Version Type**: " + $version_type + " (" + (if ($version_type == "major") then "🔥 Breaking Changes" elif ($version_type == "minor") then "✨ New Features" else "🔧 Bug Fixes" end) + ")\n- **Source branch**: `" + $source_branch + "`\n- **Target branch**: `" + $target_branch + "`\n- **Release type**: " + (if ($is_latest_str == "true") then "**Stable** 🎯" else "**Pre-production** 🧪" end) + "\n- **PR author**: @" + $pr_author),
               prerelease: $prerelease,
               make_latest: $is_latest_str
             }')
