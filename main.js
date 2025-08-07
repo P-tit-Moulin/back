@@ -13,5 +13,4 @@ app.use(express.json());
 app.use('/api/import-csv', importDataRoutes);
 app.use('/api/producers', producerRoutes);
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Serveur lancé sur le port ${PORT}`));
+module.exports = app;
