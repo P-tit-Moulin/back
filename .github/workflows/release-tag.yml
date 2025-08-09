@@ -36,20 +36,20 @@ jobs:
           PR_DATA=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.number }}")
-          
+
           # Extraire le titre et le corps de la PR en gérant les caractères spéciaux
           PR_TITLE=$(echo "$PR_DATA" | jq -r '.title // ""' | tr -d '\n\r')
           PR_BODY=$(echo "$PR_DATA" | jq -r '.body // ""')
-          
+
           # Sauvegarder le titre (sans caractères de fin de ligne)
           echo "PR_TITLE<<EOF" >> $GITHUB_ENV
           echo "$PR_TITLE" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-          
+
           # Sauvegarder le corps en base64 pour éviter les problèmes de caractères spéciaux
           PR_BODY_B64=$(echo "$PR_BODY" | base64 -w 0)
           echo "PR_BODY_B64=${PR_BODY_B64}" >> $GITHUB_ENV
-          
+
           # Déterminer le type de version basé sur les tags dans le titre
           VERSION_TYPE=""
           if echo "$PR_TITLE" | grep -qi "#breakingchange\|#breaking\|#major"; then
@@ -63,7 +63,7 @@ jobs:
             VERSION_TYPE="patch"
             echo "⚠️ Warning: No version tag found in PR title. Defaulting to patch version."
           fi
-          
+
           echo "VERSION_TYPE=${VERSION_TYPE}" >> $GITHUB_ENV
           echo "🏷️ Detected version type: ${VERSION_TYPE}"
           echo "📝 PR Title: ${PR_TITLE}"
@@ -74,12 +74,12 @@ jobs:
           CURRENT_VERSION=${{ env.CURRENT_VERSION }}
           VERSION_TYPE=${{ env.VERSION_TYPE }}
           TARGET_BRANCH="${{ github.base_ref }}"
-          
+
           # Nettoyer la version actuelle (retirer -pre-prod si présent)
           CLEAN_VERSION=$(echo $CURRENT_VERSION | sed 's/-pre-prod//')
-          
+
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CLEAN_VERSION"
-          
+
           # Incrémenter selon le type détecté
           case $VERSION_TYPE in
             major)
@@ -98,9 +98,9 @@ jobs:
               echo "🔧 Patch version increment: ${MAJOR}.${MINOR}.${PATCH}"
               ;;
           esac
-          
+
           NEW_VERSION="$MAJOR.$MINOR.$PATCH"
-          
+
           # Déterminer la version complète selon la branche cible
           if [[ "$TARGET_BRANCH" == "pre-prod" ]]; then
             FULL_VERSION="${NEW_VERSION}-pre-prod"
@@ -109,18 +109,18 @@ jobs:
             FULL_VERSION="${NEW_VERSION}"
             IS_LATEST="true"
           fi
-          
+
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
           echo "FULL_VERSION=$FULL_VERSION" >> $GITHUB_ENV
           echo "IS_LATEST=$IS_LATEST" >> $GITHUB_ENV
-          
+
           echo "📦 Final version: ${FULL_VERSION}"
 
       - name: Extract changelog from PR body
         run: |
           # Décoder le corps de la PR depuis base64
           PR_BODY=$(echo "${{ env.PR_BODY_B64 }}" | base64 -d)
-          
+
           if echo "$PR_BODY" | grep -q "#changelog"; then
             CHANGELOG=$(echo "$PR_BODY" | sed -n '/#changelog/,$p' | sed '1d' | sed '/^[[:space:]]*$/d')
           else
@@ -137,11 +137,11 @@ jobs:
                 ;;
             esac
           fi
-          
+
           if [ -z "$CHANGELOG" ]; then
             CHANGELOG="- Update to version ${{ env.FULL_VERSION }}"
           fi
-          
+
           CHANGELOG_B64=$(echo "$CHANGELOG" | base64 -w 0)
           echo "CHANGELOG_B64=${CHANGELOG_B64}" >> $GITHUB_ENV
 
@@ -149,7 +149,7 @@ jobs:
         id: version
         run: |
           jq --arg version "${{ env.FULL_VERSION }}" '.version = $version' package.json > tmp.json && mv tmp.json package.json
-          
+
           echo "version=${{ env.NEW_VERSION }}" >> $GITHUB_OUTPUT
           echo "full_tag=${{ env.FULL_VERSION }}" >> $GITHUB_OUTPUT
           echo "is_latest=${{ env.IS_LATEST }}" >> $GITHUB_OUTPUT
@@ -158,7 +158,7 @@ jobs:
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          
+
           git add package.json
           git commit -m "Update version to ${{ env.FULL_VERSION }} [skip ci]"
           git push origin ${{ github.ref_name }}
@@ -175,10 +175,10 @@ jobs:
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          
+
           git tag ${{ env.FULL_VERSION }}
           git push origin ${{ env.FULL_VERSION }}
-          
+
           if [[ "${{ env.IS_LATEST }}" == "true" ]]; then
             git tag latest
             git push origin latest
@@ -187,17 +187,17 @@ jobs:
       - name: Create GitHub Release
         run: |
           CHANGELOG_DECODED=$(echo "$CHANGELOG_B64" | base64 -d)
-          
+
           # Déterminer l'icône selon le type de version
           case ${{ env.VERSION_TYPE }} in
             major) VERSION_ICON="🔥" ;;
             minor) VERSION_ICON="✨" ;;
             patch) VERSION_ICON="🔧" ;;
           esac
-          
+
           # Récupérer le titre de la PR proprement
           PR_TITLE="${{ env.PR_TITLE }}"
-          
+
           RELEASE_PAYLOAD=$(jq -n \
             --arg tag_name "${{ env.FULL_VERSION }}" \
             --arg name "${VERSION_ICON} Release ${{ env.FULL_VERSION }}" \
@@ -217,20 +217,20 @@ jobs:
               prerelease: $prerelease,
               make_latest: $is_latest_str
             }')
-          
+
           echo "🚀 Creating release with payload:"
           echo "$RELEASE_PAYLOAD" | jq '.'
-          
+
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Content-Type: application/json" \
             "https://api.github.com/repos/${{ github.repository }}/releases" \
             -d "$RELEASE_PAYLOAD")
-          
+
           echo "🎯 GitHub API Response:"
           echo "$RESPONSE" | jq '.'
-          
+
           if echo "$RESPONSE" | jq -e '.html_url' > /dev/null; then
             RELEASE_URL=$(echo "$RESPONSE" | jq -r '.html_url')
             echo "✅ Release created successfully: $RELEASE_URL"
