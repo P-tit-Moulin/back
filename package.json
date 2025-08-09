@@ -1,6 +1,6 @@
 {
   "name": "back",
-  "version": "2.0.0-pre-prod",
+  "version": "2.1.0-pre-prod",
   "main": "main.js",
   "scripts": {
     "start": "node main.js",
