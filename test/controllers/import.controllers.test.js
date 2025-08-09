@@ -6,7 +6,11 @@ const { importCSV } = require('../../controllers/import.controllers.js');
 jest.mock('fs');
 jest.mock('../../entity/producer.entity');
 jest.mock('uuid', () => ({
-  v4: jest.fn().mockReturnValueOnce('uuid-1').mockReturnValueOnce('uuid-2'),
+  v4: jest
+    .fn()
+    .mockReturnValueOnce('uuid-1')
+    .mockReturnValueOnce('uuid-2')
+    .mockReturnValueOnce('uuid-3'),
 }));
 
 describe('importCSV – test unitaire', () => {
@@ -14,62 +18,62 @@ describe('importCSV – test unitaire', () => {
     jest.clearAllMocks();
   });
 
-  it('devrait parser le CSV et appeler Producer.insertMany avec les bons objets', async () => {
-    // CSV factice à 2 lignes + en-tête
+  it('doit parser le CSV, supprimer les doublons de nom, et appeler Producer.bulkWrite avec les bons objets', async () => {
     const csvData = `Nom;Adresse;Géolocalisation;Nom Officiel Commune;Code Postal;Description;Familles des produits;familles_des_produits_restreintes
 Prod1;Addr1;48.85,2.35;Paris;75000;Desc1;foo&bar;res1&res2
-Prod2;Addr2;;Commune2;;Desc2;;`;
+Prod2;Addr2;;Commune2;;Desc2;;
+Prod1;Addr3;40.00,3.00;Lyon;69000;Desc3;baz;res3`;
 
-    // on mocke le stream de lecture
     const fakeStream = new PassThrough();
     fs.createReadStream.mockReturnValue(fakeStream);
 
-    // on mocke insertMany
-    Producer.insertMany.mockResolvedValue([
-      {
-        /* docs retournés */
-      },
-    ]);
+    Producer.bulkWrite.mockResolvedValue({
+      upsertedCount: 2,
+      modifiedCount: 0,
+    });
 
-    // on démarre l’import
     const importPromise = importCSV();
 
-    // on envoie les données
     fakeStream.end(csvData);
 
-    // on attend la fin
     const result = await importPromise;
 
-    // vérifications
-    expect(Producer.insertMany).toHaveBeenCalledTimes(1);
-    const docs = Producer.insertMany.mock.calls[0][0];
-    expect(docs).toHaveLength(2);
+    const bulkOps = Producer.bulkWrite.mock.calls[0][0];
+    expect(bulkOps).toHaveLength(2);
 
-    // premier producer correctement transformé
-    expect(docs[0]).toMatchObject({
-      id: 'uuid-1',
-      nom: 'Prod1',
-      adresse: 'Addr1',
-      com_name: 'Paris',
-      code_postal: 75000,
-      description: 'Desc1',
-      familles_des_produits: ['foo', 'bar'],
-      // géolocalisation inversée [lon, lat]
-      geometry: { type: 'Point', coordinates: [2.35, 48.85] },
+    expect(bulkOps[0].updateOne.filter.nom).toBe('Prod1');
+    expect(bulkOps[1].updateOne.filter.nom).toBe('Prod2');
+    expect(bulkOps[0].updateOne.update.$set.nom).toBe('Prod1');
+    expect(bulkOps[1].updateOne.update.$set.nom).toBe('Prod2');
+
+    expect(result).toEqual({
+      success: true,
+      processed: 2,
+      upserted: 2,
+      updated: 0,
+    });
+  });
+
+  it('doit gérer les erreurs de lecture du fichier', async () => {
+    fs.createReadStream.mockImplementation(() => {
+      throw new Error('Erreur lecture');
     });
 
-    // deuxième producer avec valeurs par défaut
-    expect(docs[1]).toMatchObject({
-      id: 'uuid-2',
-      nom: 'Prod2',
-      adresse: 'Addr2',
-      com_name: 'Commune2',
-      code_postal: null,
-      description: 'Desc2',
-      familles_des_produits: [],
-      geometry: { type: 'Point', coordinates: [0, 0] },
-    });
+    await expect(importCSV()).rejects.toThrow('Erreur lecture');
+  });
 
-    expect(result).toEqual({ success: true, count: 2 });
+  it('doit gérer les erreurs du bulkWrite', async () => {
+    const csvData = `Nom;Adresse;Géolocalisation
+Prod1;Addr1;48.85,2.35`;
+
+    const fakeStream = new PassThrough();
+    fs.createReadStream.mockReturnValue(fakeStream);
+
+    Producer.bulkWrite.mockRejectedValue(new Error('Erreur BDD'));
+
+    const importPromise = importCSV();
+    fakeStream.end(csvData);
+
+    await expect(importPromise).rejects.toThrow('Erreur BDD');
   });
 });

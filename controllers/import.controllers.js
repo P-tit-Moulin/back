@@ -6,14 +6,14 @@ const { v4: uuidv4 } = require('uuid');
 
 async function importCSV() {
   return new Promise((resolve, reject) => {
-    const results = [];
+    const rawRows = [];
 
     fs.createReadStream(path.join(__dirname, '../data/producers.csv'))
       .pipe(csv({ separator: ';' }))
-      .on('data', (data) => results.push(data))
+      .on('data', (data) => rawRows.push(data))
       .on('end', async () => {
         try {
-          const docs = results.map((item) => {
+          const allDocs = rawRows.map((item) => {
             const [latitude, longitude] = item['Géolocalisation']
               ? item['Géolocalisation'].split(',').map(Number)
               : [0, 0];
@@ -33,26 +33,53 @@ async function importCSV() {
               familles_des_produits: item['Familles des produits']
                 ? item['Familles des produits'].split('&').map((s) => s.trim())
                 : [],
-              familles_des_produits_restreintes:
-                item.familles_des_produits_restreintes
-                  ? item.familles_des_produits_restreintes
-                      .split(';')
-                      .map((s) => s.trim())
-                  : [],
+              familles_des_produits_restreintes: item[
+                'familles_des_produits_restreintes'
+              ]
+                ? item['familles_des_produits_restreintes']
+                    .split(';')
+                    .map((s) => s.trim())
+                : [],
             };
           });
 
-          await Producer.insertMany(docs);
+          const byName = new Map();
+          allDocs.forEach((doc) => {
+            if (doc.nom) {
+              byName.set(doc.nom, doc);
+            }
+          });
+          const uniqueDocs = Array.from(byName.values());
 
-          console.log(
-            `✅ ${results.length} producteurs importés/mis à jour depuis CSV.`,
+          const bulkOps = uniqueDocs.map((doc) => ({
+            updateOne: {
+              filter: { nom: doc.nom },
+              update: { $set: doc },
+              upsert: true,
+            },
+          }));
+
+          const result = await Producer.bulkWrite(bulkOps, { ordered: false });
+
+          console.info(
+            `✅ Import CSV terminé: ${uniqueDocs.length} entrées traitées, ` +
+              `${result.upsertedCount} nouveaux insérés, ${result.modifiedCount} mis à jour.`,
           );
-          resolve({ success: true, count: results.length });
+          resolve({
+            success: true,
+            processed: uniqueDocs.length,
+            upserted: result.upsertedCount,
+            updated: result.modifiedCount,
+          });
         } catch (err) {
+          console.error('❌ Erreur pendant l’import/upsert CSV :', err);
           reject(err);
         }
       })
-      .on('error', (err) => reject(err));
+      .on('error', (err) => {
+        console.error('❌ Erreur lecture du fichier CSV :', err);
+        reject(err);
+      });
   });
 }
 
