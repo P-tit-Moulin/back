@@ -3,12 +3,13 @@
   "version": "2.1.1-pre-prod",
   "main": "main.js",
   "scripts": {
-    "start": "node main.js",
+    "start": "node server.js && npm run sentry:sourcemaps",
     "dev": "nodemon server.js",
     "lint": "eslint .",
     "format": "prettier --write .",
     "prepare": "husky",
-    "test": "jest"
+    "test": "jest",
+    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org ptit-moulin --project ptit-moulin-back ./out && sentry-cli sourcemaps upload --org ptit-moulin --project ptit-moulin-back ./out"
   },
   "repository": {
     "type": "git",
@@ -24,6 +25,9 @@
   "homepage": "https://github.com/P-tit-Moulin/back#readme",
   "description": "",
   "dependencies": {
+    "@sentry/cli": "^2.52.0",
+    "@sentry/node": "^10.8.0",
+    "@sentry/profiling-node": "^10.8.0",
     "axios": "^1.10.0",
     "csv-parser": "^3.2.0",
     "dotenv": "^16.5.0",
