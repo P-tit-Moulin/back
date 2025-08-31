@@ -69,7 +69,6 @@ class UserService {
         type: 'Point',
         coordinates,
       },
-      nom: nom_de_famille,
       prenom,
       nom_de_famille,
       email,
