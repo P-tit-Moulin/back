@@ -41,8 +41,7 @@ class UserService {
       return { user: existingProducerByName, isUpdate: true };
     }
 
-    const existingProducer = await Producer.findOne({
-      nom: nom_de_famille,
+      nom_de_famille: nom_de_famille,
       isUserAccount: { $ne: true },
     });
 
