@@ -105,19 +105,13 @@ class UserController {
 
       res.status(200).json({
         message: 'Utilisateur mis à jour avec succès',
-        user: updatedUser,
+        user: updatedUser.toJSON(),
       });
     } catch (error) {
       console.error("Erreur lors de la mise à jour de l'utilisateur:", error);
 
       if (error.message.includes('non trouvé')) {
         return res.status(404).json({ error: error.message });
-      }
-      if (
-        error.message.includes('Accès refusé') ||
-        error.message.includes('existe déjà')
-      ) {
-        return res.status(403).json({ error: error.message });
       }
 
       res.status(500).json({
@@ -143,12 +137,6 @@ class UserController {
       if (error.message.includes('non trouvé')) {
         return res.status(404).json({ error: error.message });
       }
-      if (
-        error.message.includes('Accès refusé') ||
-        error.message.includes('dernier administrateur')
-      ) {
-        return res.status(403).json({ error: error.message });
-      }
 
       res.status(500).json({
         error: 'Erreur interne du serveur',
@@ -158,15 +146,6 @@ class UserController {
 
   static async getAllUsers(req, res) {
     try {
-      const currentUser = req.user;
-
-      if (currentUser.role !== 'admin') {
-        return res.status(403).json({
-          error:
-            'Accès refusé. Seuls les administrateurs peuvent voir tous les utilisateurs.',
-        });
-      }
-
       const users = await UserService.getAllUsers();
 
       res.status(200).json({
@@ -194,9 +173,6 @@ class UserController {
 
       if (error.message.includes('non trouvé')) {
         return res.status(404).json({ error: error.message });
-      }
-      if (error.message.includes('Accès refusé')) {
-        return res.status(403).json({ error: error.message });
       }
 
       res.status(500).json({

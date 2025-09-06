@@ -51,6 +51,24 @@ const createUserSchema = Joi.object({
       'any.required': 'Le mot de passe est obligatoire',
     }),
 
+  entreprise: Joi.string()
+    .min(1)
+    .max(200)
+    .custom((value, helpers) => {
+      if (typeof value !== 'string') return helpers.error('any.invalid');
+      if (value.includes('$') || value.includes('.')) {
+        return helpers.error('string.invalid', { value });
+      }
+      return value;
+    }, 'NoSQL injection protection')
+    .messages({
+      'string.base': "L'entreprise doit être une chaîne de caractères",
+      'string.min': 'Le champ entreprise est obligatoire',
+      'string.max': 'Le champ entreprise ne peut pas dépasser 200 caractères',
+      'string.invalid':
+        "Le nom de l'entreprise contient des caractères non autorisés",
+    }),
+
   role: Joi.string().valid('user', 'admin').default('user'),
 
   adresse: Joi.string().max(200).allow(''),

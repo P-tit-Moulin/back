@@ -1,16 +1,4 @@
-const bcrypt = require('bcrypt');
-
-class PasswordService {
-  static async hashPassword(password) {
-    const salt = await bcrypt.genSalt(12);
-    return bcrypt.hash(password, salt);
-  }
-
-  static async comparePassword(candidatePassword, hashedPassword) {
-    if (!hashedPassword) return false;
-    return bcrypt.compare(candidatePassword, hashedPassword);
-  }
-
+class PasswordValidator {
   static validatePasswordStrength(password) {
     const minLength = 8;
     const hasUpperCase = /[A-Z]/.test(password);
@@ -53,4 +41,4 @@ class PasswordService {
   }
 }
 
-module.exports = PasswordService;
+module.exports = PasswordValidator;

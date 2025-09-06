@@ -1,6 +1,6 @@
 const Producer = require('../entity/producer.entity');
-const PasswordService = require('./password.services');
-const JWTService = require('./jwt.services');
+const Password = require('../utils/password');
+const JWTService = require('../utils/jwt');
 
 class UserService {
   static async generateNewProducerId() {
@@ -9,102 +9,88 @@ class UserService {
   }
 
   static async createUser(userData) {
-    const { prenom, nom_de_famille, email, mdp, role, ...producerData } =
+    const { prenom, nom_de_famille, email, mdp, entreprise, ...producerData } =
       userData;
+    const existingUserByEmail = await Producer.findOne({ email });
 
-    const existingUser = await Producer.findOne({
-      email,
-      isUserAccount: true,
-    });
-
-    if (existingUser) {
+    if (existingUserByEmail) {
       throw new Error('Un utilisateur avec cet email existe déjà');
     }
 
-    const hashedPassword = await PasswordService.hashPassword(mdp);
-
     const existingProducerByName = await Producer.findOne({
-      nom_de_famille,
-      isUserAccount: true,
+      nom: { $regex: `^${entreprise}$`, $options: 'i' },
     });
+
+    const hashedPassword = await Password.hashPassword(mdp);
+
+    let user, statusType;
 
     if (existingProducerByName) {
       existingProducerByName.prenom = prenom;
+      existingProducerByName.nom = entreprise;
+      existingProducerByName.nom_de_famille = nom_de_famille;
       existingProducerByName.email = email;
       existingProducerByName.mdp = hashedPassword;
-      existingProducerByName.role = role || 'user';
-      existingProducerByName.isUserAccount = true;
-
+      existingProducerByName.role = 'user';
       Object.assign(existingProducerByName, producerData);
 
       await existingProducerByName.save();
-      return { user: existingProducerByName, isUpdate: true };
+      user = existingProducerByName;
+      statusType = 'isUpdate';
+    } else {
+      const newId = await this.generateNewProducerId();
+      const coordinates = producerData.coordinates || [0, 0];
+
+      const newProducer = new Producer({
+        id: newId,
+        geometry: {
+          type: 'Point',
+          coordinates,
+        },
+        prenom,
+        nom: entreprise,
+        nom_de_famille,
+        email,
+        mdp: hashedPassword,
+        role: 'user',
+        ...producerData,
+      });
+
+      await newProducer.save();
+      user = newProducer;
+      statusType = 'isNew';
     }
 
-      nom_de_famille: nom_de_famille,
-      isUserAccount: { $ne: true },
+    const payload = {
+      userId: user._id.toString(),
+      email: user.email,
+      role: user.role,
+    };
+    const accessToken = JWTService.generateAccessToken(payload);
+    const refreshToken = JWTService.generateRefreshToken({
+      userId: user._id.toString(),
     });
 
-    if (existingProducer) {
-      existingProducer.prenom = prenom;
-      existingProducer.nom_de_famille = nom_de_famille;
-      existingProducer.email = email;
-      existingProducer.mdp = hashedPassword;
-      existingProducer.role = role || 'user';
-      existingProducer.isUserAccount = true;
-
-      Object.assign(existingProducer, producerData);
-
-      await existingProducer.save();
-      return { user: existingProducer, isTransformed: true };
-    }
-
-    const newId = await this.generateNewProducerId();
-
-    const coordinates = producerData.coordinates || [0, 0];
-
-    const newProducer = new Producer({
-      id: newId,
-      geometry: {
-        type: 'Point',
-        coordinates,
-      },
-      prenom,
-      nom_de_famille,
-      email,
-      mdp: hashedPassword,
-      role: role || 'user',
-      isUserAccount: true,
-      ...producerData,
-    });
-
-    await newProducer.save();
-    return { user: newProducer, isNew: true };
+    return {
+      user: user.toJSON(),
+      accessToken,
+      refreshToken,
+      [statusType]: true,
+    };
   }
 
   static async updateUser(userId, updateData, currentUser) {
     const userToUpdate = await Producer.findOne({
       $or: [{ _id: userId }, { id: userId }],
-      isUserAccount: true,
     });
 
     if (!userToUpdate) {
       throw new Error('Utilisateur non trouvé');
     }
 
-    if (
-      currentUser.role !== 'admin' &&
-      currentUser._id.toString() !== userToUpdate._id.toString()
-    ) {
-      throw new Error(
-        'Accès refusé. Seuls les administrateurs ou le propriétaire du compte peuvent effectuer cette action.',
-      );
-    }
-
     if (updateData.email && updateData.email !== userToUpdate.email) {
       const existingUser = await Producer.findOne({
         email: updateData.email,
-        isUserAccount: true,
       });
       if (existingUser) {
         throw new Error('Un utilisateur avec cet email existe déjà');
@@ -116,7 +102,7 @@ class UserService {
     }
 
     if (updateData.mdp) {
-      updateData.mdp = await PasswordService.hashPassword(updateData.mdp);
+      updateData.mdp = await Password.hashPassword(updateData.mdp);
     }
 
     if (updateData.nom_de_famille) {
@@ -137,29 +123,18 @@ class UserService {
     return userToUpdate;
   }
 
-  static async deleteUser(userId, currentUser) {
+  static async deleteUser(userId) {
     const userToDelete = await Producer.findOne({
       $or: [{ _id: userId }, { id: userId }],
-      isUserAccount: true,
     });
 
     if (!userToDelete) {
       throw new Error('Utilisateur non trouvé');
     }
 
-    if (
-      currentUser.role !== 'admin' &&
-      currentUser._id.toString() !== userToDelete._id.toString()
-    ) {
-      throw new Error(
-        'Accès refusé. Seuls les administrateurs ou le propriétaire du compte peuvent effectuer cette action.',
-      );
-    }
-
     if (userToDelete.role === 'admin') {
       const adminCount = await Producer.countDocuments({
         role: 'admin',
-        isUserAccount: true,
       });
       if (adminCount <= 1) {
         throw new Error('Impossible de supprimer le dernier administrateur');
@@ -171,44 +146,32 @@ class UserService {
     userToDelete.email = undefined;
     userToDelete.mdp = undefined;
     userToDelete.role = undefined;
-    userToDelete.isUserAccount = false;
 
     await userToDelete.save();
     return true;
   }
 
   static async getAllUsers() {
-    return Producer.find({ isUserAccount: true }).select('-mdp');
+    return Producer.find().select('-mdp');
   }
 
-  static async getUserById(userId, currentUser) {
+  static async getUserById(userId) {
     const user = await Producer.findOne({
       $or: [{ _id: userId }, { id: userId }],
-      isUserAccount: true,
     }).select('-mdp');
 
     if (!user) {
       throw new Error('Utilisateur non trouvé');
     }
 
-    if (
-      currentUser.role !== 'admin' &&
-      currentUser._id.toString() !== user._id.toString()
-    ) {
-      throw new Error('Accès refusé.');
-    }
-
     return user;
   }
 
   static async authenticateUser(email, password) {
-    const user = await Producer.findOne({ email, isUserAccount: true });
-    if (!user) throw new Error('Email ou mot de passe incorrect');
-    const isPasswordValid = await PasswordService.comparePassword(
-      password,
-      user.mdp,
-    );
-    if (!isPasswordValid) throw new Error('Email ou mot de passe incorrect');
+    const user = await Producer.findOne({ email });
+    const isPasswordValid = await Password.comparePassword(password, user.mdp);
+    if (!user || !isPasswordValid)
+      throw new Error('Email ou mot de passe incorrect');
 
     const payload = {
       userId: user._id.toString(),
@@ -233,7 +196,6 @@ class UserService {
 
     const user = await Producer.findOne({
       _id: decoded.userId,
-      isUserAccount: true,
     });
     if (!user) throw new Error('Utilisateur non trouvé');
 

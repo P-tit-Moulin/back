@@ -1,5 +1,6 @@
 require('./config/sentry.js');
 const express = require('express');
+const cors = require('cors');
 const Sentry = require('@sentry/node');
 const dotenv = require('dotenv');
 const rateLimit = require('express-rate-limit');
@@ -13,11 +14,19 @@ connectDB();
 
 const app = express();
 
+app.use(
+  cors({
+    origin: 'http://localhost:5173',
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  }),
+);
+
 app.disable('x-powered-by');
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: process.env.NODE_ENV === 'development' ? 1000 : 100,
   message: 'Trop de requêtes depuis cette IP, réessayez plus tard.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -34,16 +43,10 @@ const authLimiter = rateLimit({
 
 app.use(express.json({ limit: '10mb' }));
 
-app.use(Sentry.Handlers.requestHandler());
+Sentry.setupExpressErrorHandler(app);
 
-app.use('/api/import-csv', importDataRoutes);
-app.use('/api/producers', producerRoutes);
-app.use('/api/users', authLimiter, userRoutes);
-
-app.use(Sentry.Handlers.errorHandler());
-
-app.use((err, req, res) => {
-  res.status(500).json({ error: 'Something went wrong!' });
-});
+app.use('/api/import-csv', cors(), importDataRoutes);
+app.use('/api/producers', cors(), producerRoutes);
+app.use('/api/users', authLimiter, cors(), userRoutes);
 
 module.exports = app;

@@ -61,10 +61,6 @@ async function importCSV() {
 
           const result = await Producer.bulkWrite(bulkOps, { ordered: false });
 
-          console.info(
-            `✅ Import CSV terminé: ${uniqueDocs.length} entrées traitées, ` +
-              `${result.upsertedCount} nouveaux insérés, ${result.modifiedCount} mis à jour.`,
-          );
           resolve({
             success: true,
             processed: uniqueDocs.length,
@@ -72,12 +68,10 @@ async function importCSV() {
             updated: result.modifiedCount,
           });
         } catch (err) {
-          console.error('❌ Erreur pendant l’import/upsert CSV :', err);
           reject(err);
         }
       })
       .on('error', (err) => {
-        console.error('❌ Erreur lecture du fichier CSV :', err);
         reject(err);
       });
   });
