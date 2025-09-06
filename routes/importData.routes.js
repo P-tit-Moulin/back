@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { importCSV } = require('../controllers/import.controllers.js');
+const { importCSV } = require('../controllers/import.controller.js');
 
 router.post('/', async (req, res) => {
   try {
