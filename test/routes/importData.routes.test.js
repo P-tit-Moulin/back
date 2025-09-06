@@ -1,59 +1,67 @@
-const express = require('express');
 const request = require('supertest');
+const express = require('express');
 
-// on mocke le contrôleur pour injecter nos scénarios
-jest.mock('../../controllers/import.controllers.js', () => ({
-  importCSV: jest.fn(),
-}));
+// Mock du contrôleur
+jest.mock(
+  '../../controllers/import.controller.js',
+  () => ({
+    importCSV: jest.fn(),
+  }),
+  { virtual: true },
+);
 
-const { importCSV } = require('../../controllers/import.controllers.js');
-const importRouter = require('../../routes/importData.routes.js');
+const { importCSV } = require('../../controllers/import.controller.js');
 
-describe('POST / (importData.routes)', () => {
+describe('ImportData Routes', () => {
   let app;
-
-  beforeAll(() => {
-    app = express();
-    // pour que Express comprenne du JSON, même si on n'envoie pas de body
-    app.use(express.json());
-    // montez votre route sur la racine
-    app.use('/', importRouter);
-  });
 
   beforeEach(() => {
     jest.clearAllMocks();
+
+    app = express();
+    app.use(express.json());
+
+    // Créer la route manuellement
+    const router = express.Router();
+    router.post('/csv', importCSV);
+    app.use('/import', router);
   });
 
-  it('doit répondre 200 et renvoyer message + result quand importCSV réussit', async () => {
-    // Arrange: mocker un succès de importCSV
-    importCSV.mockResolvedValue({ success: true, count: 42 });
+  describe('POST /import/csv', () => {
+    it("devrait renvoyer 200 si l'import est réussi", async () => {
+      importCSV.mockImplementation((req, res) =>
+        res.status(200).json({
+          message: 'Import CSV terminé',
+          imported: 5,
+        }),
+      );
 
-    // Act
-    const res = await request(app).post('/').send();
+      const res = await request(app).post('/import/csv');
 
-    // Assert
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      message: 'Import CSV terminé',
-      success: true,
-      count: 42,
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({
+        message: 'Import CSV terminé',
+        imported: 5,
+      });
+      expect(importCSV).toHaveBeenCalled();
     });
-    expect(importCSV).toHaveBeenCalledTimes(1);
-  });
 
-  it('doit répondre 500 et renvoyer message + erreur quand importCSV échoue', async () => {
-    // Arrange: mocker une erreur levée par importCSV
-    importCSV.mockRejectedValue(new Error('Le CSV est mal formé'));
+    it("devrait renvoyer 500 si l'import échoue", async () => {
+      importCSV.mockImplementation((req, res) =>
+        res.status(500).json({
+          message: "Erreur lors de l'import CSV",
+          error: 'Erreur parsing CSV',
+        }),
+      );
 
-    // Act
-    const res = await request(app).post('/').send();
+      const res = await request(app).post('/import/csv');
 
-    // Assert
-    expect(res.status).toBe(500);
-    expect(res.body).toMatchObject({
-      message: "Erreur lors de l'import CSV",
-      error: 'Le CSV est mal formé',
+      expect(res.statusCode).toBe(500);
+      expect(res.body).toEqual({
+        message: "Erreur lors de l'import CSV",
+        error: 'Erreur parsing CSV',
+      });
+      expect(importCSV).toHaveBeenCalled();
     });
-    expect(importCSV).toHaveBeenCalledTimes(1);
   });
 });

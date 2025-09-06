@@ -30,3 +30,6 @@ coverage/
 # Build output
 dist/
 build/
+
+# Sentry Config File
+.sentryclirc

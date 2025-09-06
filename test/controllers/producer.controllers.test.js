@@ -1,132 +1,82 @@
 const ProducerController = require('../../controllers/producer.controller');
-const Producer = require('../../entity/producer.entity');
+const ProducerService = require('../../services/producer.services');
 
-jest.mock('../../entity/producer.entity');
+// On mocke le service
+jest.mock('../../services/producer.services');
 
 describe('ProducerController', () => {
-  let req;
-  let res;
+  let req, res;
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    req = {
-      query: {},
-      params: {},
-    };
-    res = {
-      json: jest.fn(),
-      status: jest.fn(() => res),
-    };
+  beforeAll(() => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
+  afterAll(() => {
+    console.error.mockRestore();
+  });
+
+  beforeEach(() => {
+    req = { query: {}, params: {} };
+    res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+    jest.clearAllMocks();
+  });
+
+  // GET PRODUCERS
   describe('getProducers', () => {
-    it('should return all producers with default pagination when no filters provided', async () => {
-      // Arrange
-      const fakeProducers = [{ id: '1' }, { id: '2' }];
-      Producer.find.mockReturnValue({
-        limit: jest.fn().mockReturnThis(),
-        skip: jest.fn().mockReturnThis(),
-        sort: jest.fn().mockResolvedValue(fakeProducers),
-      });
-      Producer.countDocuments.mockResolvedValue(2);
+    it('devrait renvoyer 200 avec la liste des producteurs', async () => {
+      const fakeResult = { data: [{ id: 1, nom: 'Test' }], total: 1 };
+      ProducerService.getProducers.mockResolvedValue(fakeResult);
 
-      // Act
       await ProducerController.getProducers(req, res);
 
-      // Assert
-      expect(Producer.find).toHaveBeenCalledWith({});
-      expect(Producer.countDocuments).toHaveBeenCalledWith({});
+      expect(ProducerService.getProducers).toHaveBeenCalledWith(req.query);
       expect(res.json).toHaveBeenCalledWith({
         success: true,
-        data: fakeProducers,
-        pagination: {
-          current_page: 1,
-          total_pages: Math.ceil(2 / 50),
-          total_items: 2,
-          items_per_page: 50,
-        },
+        ...fakeResult,
       });
     });
 
-    it('should apply filters and geo-filters when provided', async () => {
-      // Arrange: set query params
-      req.query = {
-        com_name: 'Paris',
-        nom: 'Prod',
-        geometry: '2.35,48.85',
-        radius: '5',
-        familles_des_produits: ['foo', 'bar'],
-        page: '2',
-        limit: '10',
-      };
+    it('devrait renvoyer 500 en cas derreur', async () => {
+      ProducerService.getProducers.mockRejectedValue(new Error('Erreur BDD'));
 
-      const fakeProducers = [{ id: 'x' }];
-      const mockFind = {
-        limit: jest.fn().mockReturnThis(),
-        skip: jest.fn().mockReturnThis(),
-        sort: jest.fn().mockResolvedValue(fakeProducers),
-      };
-      Producer.find.mockReturnValue(mockFind);
-      Producer.countDocuments.mockResolvedValue(1);
-
-      // Act
       await ProducerController.getProducers(req, res);
 
-      // Assert filters object
-      const earthRadius = 6378.1;
-      const expectedRadius = parseFloat(req.query.radius) / earthRadius;
-      expect(Producer.find).toHaveBeenCalledWith({
-        com_name: { $regex: 'Paris', $options: 'i' },
-        nom: { $regex: 'Prod', $options: 'i' },
-        familles_des_produits: { $in: ['foo', 'bar'] },
-        geometry: {
-          $geoWithin: {
-            $centerSphere: [[2.35, 48.85], expectedRadius],
-          },
-        },
-      });
-      expect(res.json).toHaveBeenCalledWith({
-        success: true,
-        data: fakeProducers,
-        pagination: {
-          current_page: 2,
-          total_pages: Math.ceil(1 / 10),
-          total_items: 1,
-          items_per_page: 10,
-        },
-      });
-    });
-
-    it('should catch and return 500 on error', async () => {
-      // Arrange
-      Producer.find.mockImplementation(() => {
-        throw new Error('fail');
-      });
-
-      // Act
-      await ProducerController.getProducers(req, res);
-
-      // Assert
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
         success: false,
         message: 'Erreur lors de la récupération des producteurs',
-        error: 'fail',
+        error: 'Erreur BDD',
       });
     });
   });
 
+  // GET PRODUCER BY ID
   describe('getProducerById', () => {
-    it('should return 404 when producer not found', async () => {
-      // Arrange
-      req.params.id = 'unknown';
-      Producer.findOne.mockResolvedValue(null);
+    it('devrait renvoyer un producteur', async () => {
+      req.params.id = '1';
+      const producer = { id: 1, nom: 'Fermier' };
+      ProducerService.getProducerById.mockResolvedValue(producer);
 
-      // Act
       await ProducerController.getProducerById(req, res);
 
-      // Assert
-      expect(Producer.findOne).toHaveBeenCalledWith({ id: 'unknown' });
+      expect(ProducerService.getProducerById).toHaveBeenCalledWith('1');
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: producer,
+      });
+    });
+
+    it('devrait renvoyer 404 si producteur non trouvé', async () => {
+      req.params.id = '1';
+      ProducerService.getProducerById.mockRejectedValue(
+        new Error('Producteur non trouvé'),
+      );
+
+      await ProducerController.getProducerById(req, res);
+
       expect(res.status).toHaveBeenCalledWith(404);
       expect(res.json).toHaveBeenCalledWith({
         success: false,
@@ -134,148 +84,97 @@ describe('ProducerController', () => {
       });
     });
 
-    it('should return producer when found', async () => {
-      // Arrange
-      const fake = { id: '1', nom: 'Test' };
+    it('devrait renvoyer 500 pour une autre erreur', async () => {
       req.params.id = '1';
-      Producer.findOne.mockResolvedValue(fake);
+      ProducerService.getProducerById.mockRejectedValue(
+        new Error('Erreur serveur'),
+      );
 
-      // Act
       await ProducerController.getProducerById(req, res);
 
-      // Assert
-      expect(res.json).toHaveBeenCalledWith({
-        success: true,
-        data: fake,
-      });
-    });
-
-    it('should catch and return 500 on error', async () => {
-      // Arrange
-      req.params.id = '1';
-      Producer.findOne.mockRejectedValue(new Error('boom'));
-
-      // Act
-      await ProducerController.getProducerById(req, res);
-
-      // Assert
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
         success: false,
         message: 'Erreur lors de la récupération du producteur',
-        error: 'boom',
+        error: 'Erreur serveur',
       });
     });
   });
 
+  // GET PRODUCERS NEARBY
   describe('getProducersNearby', () => {
-    it('should return 400 if coords missing', async () => {
-      // Arrange: no longitude/latitude in query
-      req.query = {};
+    it('devrait renvoyer les producteurs proches', async () => {
+      const fakeResult = { data: [{ id: 2, nom: 'Bio local' }], total: 1 };
+      ProducerService.getProducersNearby.mockResolvedValue(fakeResult);
 
-      // Act
       await ProducerController.getProducersNearby(req, res);
 
-      // Assert
+      expect(ProducerService.getProducersNearby).toHaveBeenCalledWith(
+        req.query,
+      );
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        ...fakeResult,
+      });
+    });
+
+    it('devrait renvoyer 400 si erreur sur les coordonnées', async () => {
+      ProducerService.getProducersNearby.mockRejectedValue(
+        new Error('coordonnées invalides'),
+      );
+
+      await ProducerController.getProducersNearby(req, res);
+
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
         success: false,
-        message: 'Les coordonnées longitude et latitude sont requises',
+        message: 'coordonnées invalides',
       });
     });
 
-    it('should return nearby producers when coords provided', async () => {
-      // Arrange
-      req.query = { longitude: '1.0', latitude: '2.0', radius: '3' };
-      const fakeProducers = [{ id: 'n1' }];
-      Producer.find.mockReturnValue({
-        limit: jest.fn().mockResolvedValue(fakeProducers),
-      });
+    it('devrait renvoyer 500 pour une autre erreur', async () => {
+      ProducerService.getProducersNearby.mockRejectedValue(
+        new Error('Erreur BDD'),
+      );
 
-      // Act
       await ProducerController.getProducersNearby(req, res);
 
-      // Assert
-      expect(Producer.find).toHaveBeenCalledWith({
-        geometry: {
-          $near: {
-            $geometry: { type: 'Point', coordinates: [1.0, 2.0] },
-            $maxDistance: 3000,
-          },
-        },
-      });
-      expect(res.json).toHaveBeenCalledWith({
-        success: true,
-        data: fakeProducers,
-        search_params: {
-          longitude: 1.0,
-          latitude: 2.0,
-          radius_km: 3,
-        },
-      });
-    });
-
-    it('should catch and return 500 on error', async () => {
-      // Arrange
-      req.query = { longitude: '1', latitude: '2' };
-      Producer.find.mockImplementation(() => {
-        throw new Error('err');
-      });
-
-      // Act
-      await ProducerController.getProducersNearby(req, res);
-
-      // Assert
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
         success: false,
         message: 'Erreur lors de la recherche géographique',
-        error: 'err',
+        error: 'Erreur BDD',
       });
     });
   });
 
+  // GET PRODUCT FAMILIES
   describe('getProductFamilies', () => {
-    it('should return unique split families and restricted families', async () => {
-      // Arrange
-      Producer.distinct
-        .mockResolvedValueOnce(['a,b', 'c'])
-        .mockResolvedValueOnce(['x', 'y,z', '']);
+    it('devrait renvoyer les familles de produits', async () => {
+      const families = ['Fruits', 'Légumes'];
+      ProducerService.getProductFamilies.mockResolvedValue(families);
 
-      // Act
       await ProducerController.getProductFamilies(req, res);
 
-      // Assert
-      expect(Producer.distinct).toHaveBeenNthCalledWith(
-        1,
-        'familles_des_produits',
-      );
-      expect(Producer.distinct).toHaveBeenNthCalledWith(
-        2,
-        'familles_des_produits_restreintes',
-      );
+      expect(ProducerService.getProductFamilies).toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith({
         success: true,
-        data: {
-          familles_des_produits: ['a', 'b', 'c'],
-          familles_des_produits_restreintes: ['x', 'y', 'z'],
-        },
+        data: families,
       });
     });
 
-    it('should catch and return 500 on error', async () => {
-      // Arrange
-      Producer.distinct.mockRejectedValue(new Error('fail fam'));
+    it('devrait renvoyer 500 si erreur', async () => {
+      ProducerService.getProductFamilies.mockRejectedValue(
+        new Error('Erreur Mongo'),
+      );
 
-      // Act
       await ProducerController.getProductFamilies(req, res);
 
-      // Assert
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({
         success: false,
         message: 'Erreur lors de la récupération des familles de produits',
-        error: 'fail fam',
+        error: 'Erreur Mongo',
       });
     });
   });
