@@ -1,6 +1,6 @@
 {
   "name": "back",
-  "version": "2.2.0-pre-prod",
+  "version": "2.2.1-pre-prod",
   "main": "main.js",
   "scripts": {
     "start": "node server.js && npm run sentry:sourcemaps",
