@@ -16,7 +16,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: true,
+    origin: 'https://pre-prod.ptit-moulin.fr',
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
