@@ -3,16 +3,11 @@ const Password = require('../utils/password');
 const JWTService = require('../utils/jwt');
 
 class UserService {
-  static async generateNewProducerId() {
-    const lastProducer = await Producer.findOne().sort({ id: -1 }).limit(1);
-    return lastProducer ? String(parseInt(lastProducer.id) + 1) : '1';
-  }
-
   static async createUser(userData) {
     const { prenom, nom_de_famille, email, mdp, entreprise, ...producerData } =
       userData;
-    const existingUserByEmail = await Producer.findOne({ email });
 
+    const existingUserByEmail = await Producer.findOne({ email });
     if (existingUserByEmail) {
       throw new Error('Un utilisateur avec cet email existe déjà');
     }
@@ -22,7 +17,6 @@ class UserService {
     });
 
     const hashedPassword = await Password.hashPassword(mdp);
-
     let user, statusType;
 
     if (existingProducerByName) {
@@ -38,11 +32,9 @@ class UserService {
       user = existingProducerByName;
       statusType = 'isUpdate';
     } else {
-      const newId = await this.generateNewProducerId();
       const coordinates = producerData.coordinates || [0, 0];
 
       const newProducer = new Producer({
-        id: newId,
         geometry: {
           type: 'Point',
           coordinates,
@@ -61,18 +53,24 @@ class UserService {
       statusType = 'isNew';
     }
 
+    const userObj = user.toObject ? user.toObject() : { ...user };
+    userObj.id = user._id.toString();
+
+    if (userObj.mdp) delete userObj.mdp;
+
     const payload = {
       userId: user._id.toString(),
       email: user.email,
       role: user.role,
     };
+
     const accessToken = JWTService.generateAccessToken(payload);
     const refreshToken = JWTService.generateRefreshToken({
       userId: user._id.toString(),
     });
 
     return {
-      user: user.toJSON(),
+      user: userObj,
       accessToken,
       refreshToken,
       [statusType]: true,

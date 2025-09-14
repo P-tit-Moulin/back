@@ -60,7 +60,7 @@ class ProducerService {
   }
 
   static async getProducerById(id) {
-    const producer = await Producer.findOne({ id: id });
+    const producer = await Producer.findById(id);
     if (!producer) throw new Error('Producteur non trouvé');
     return producer;
   }
