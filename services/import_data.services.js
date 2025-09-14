@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const csv = require('csv-parser');
 const Producer = require('../entity/producer.entity');
-const { v4: uuidv4 } = require('uuid');
 
 async function importCSV() {
   return new Promise((resolve, reject) => {
@@ -17,8 +16,9 @@ async function importCSV() {
             const [latitude, longitude] = item['Géolocalisation']
               ? item['Géolocalisation'].split(',').map(Number)
               : [0, 0];
+
             return {
-              id: uuidv4(),
+              // Retiré le champ id manuel - MongoDB utilisera _id automatiquement
               geometry: {
                 type: 'Point',
                 coordinates: [longitude, latitude],
@@ -43,13 +43,30 @@ async function importCSV() {
             };
           });
 
+          // Filtrer les documents avec un nom valide
+          const validDocs = allDocs.filter(
+            (doc) => doc.nom && doc.nom.trim() !== '',
+          );
+
+          // Dédoublonnage par nom
           const byName = new Map();
-          allDocs.forEach((doc) => {
-            if (doc.nom) {
-              byName.set(doc.nom, doc);
-            }
+          validDocs.forEach((doc) => {
+            byName.set(doc.nom, doc);
           });
           const uniqueDocs = Array.from(byName.values());
+
+          console.log(`Processing ${uniqueDocs.length} unique documents`);
+
+          if (uniqueDocs.length === 0) {
+            resolve({
+              success: true,
+              processed: 0,
+              upserted: 0,
+              updated: 0,
+              message: 'Aucun document valide à traiter',
+            });
+            return;
+          }
 
           const bulkOps = uniqueDocs.map((doc) => ({
             updateOne: {
@@ -61,17 +78,22 @@ async function importCSV() {
 
           const result = await Producer.bulkWrite(bulkOps, { ordered: false });
 
+          console.log('Bulk write result:', result);
+
           resolve({
             success: true,
             processed: uniqueDocs.length,
-            upserted: result.upsertedCount,
-            updated: result.modifiedCount,
+            upserted: result.upsertedCount || 0,
+            updated: result.modifiedCount || 0,
+            matched: result.matchedCount || 0,
           });
         } catch (err) {
+          console.error('Erreur lors du traitement:', err);
           reject(err);
         }
       })
       .on('error', (err) => {
+        console.error('Erreur lors de la lecture du fichier CSV:', err);
         reject(err);
       });
   });

@@ -23,6 +23,7 @@ const producerSchema = new mongoose.Schema(
       trim: true,
       sparse: true,
       match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Email invalide'],
+      // Retiré index: true pour éviter le warning
     },
 
     mdp: { type: String, minlength: 8 },
@@ -30,10 +31,6 @@ const producerSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
-
-producerSchema.index({ geometry: '2dsphere' });
-producerSchema.index({ email: 1 }, { unique: true, sparse: true });
-producerSchema.index({ nom_de_famille: 1 }, { sparse: true });
 
 producerSchema.methods.toJSON = function () {
   const obj = this.toObject();

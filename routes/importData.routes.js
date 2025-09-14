@@ -1,16 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { importCSV } = require('../controllers/import.controller.js');
+const ImportController = require('../controllers/import.controller');
 
-router.post('/', async (req, res) => {
-  try {
-    const result = await importCSV();
-    res.json({ message: 'Import CSV terminé', ...result });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Erreur lors de l'import CSV", error: error.message });
-  }
-});
+router.post('/', ImportController.importCSV);
 
 module.exports = router;

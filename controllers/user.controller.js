@@ -85,7 +85,7 @@ class UserController {
       if (error.message.includes('existe déjà')) {
         return res.status(409).json({ error: error.message });
       }
-
+      console.error(error);
       res.status(500).json({
         error: 'Erreur interne du serveur',
       });
