@@ -75,9 +75,18 @@ class UserController {
         message = 'Utilisateur créé avec succès';
       }
 
+      res.cookie('refreshToken', result.refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+
       res.status(result.isNew ? 201 : 200).json({
         message,
         user: result.user,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
       });
     } catch (error) {
       console.error("Erreur lors de la création de l'utilisateur:", error);
